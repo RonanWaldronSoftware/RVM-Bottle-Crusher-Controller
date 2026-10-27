@@ -1,0 +1,332 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Window
+
+ApplicationWindow {
+    id: root
+    width: 1280
+    height: 800
+    minimumWidth: 1024
+    minimumHeight: 680
+    visible: true
+    visibility: startFullscreen ? Window.FullScreen : Window.Windowed
+    title: "BB01 Machine Control"
+    color: "#101827"
+
+    readonly property color panel: "#172235"
+    readonly property color panel2: "#1e2c42"
+    readonly property color textMain: "#f8fafc"
+    readonly property color textMuted: "#a9b5c7"
+    readonly property color green: "#22c55e"
+    readonly property color amber: "#f59e0b"
+    readonly property color red: "#ef4444"
+    readonly property color blue: "#3b82f6"
+
+    function statusColour(ok) { return ok ? green : amber }
+
+    Shortcut {
+        sequence: "Esc"
+        onActivated: {
+            if (root.visibility === Window.FullScreen)
+                root.visibility = Window.Windowed
+        }
+    }
+    Shortcut { sequence: "Ctrl+Q"; onActivated: Qt.quit() }
+
+    header: Rectangle {
+        height: 76
+        color: panel
+        border.color: "#2b3a52"
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: 16
+            spacing: 16
+            ColumnLayout {
+                Layout.fillWidth: true
+                Text { text: "BB01 BOTTLE PROCESSOR"; color: textMain; font.pixelSize: 23; font.bold: true }
+                Text {
+                    text: backend.simulationMode ? "SIMULATION" : "JETSON LIVE · DUAL BARCODE"
+                    color: backend.simulationMode ? amber : textMuted
+                    font.pixelSize: 13
+                }
+            }
+            Rectangle {
+                radius: 12
+                color: cycle.scanningEnabled ? "#123924" : "#3b2a16"
+                implicitWidth: 330
+                implicitHeight: 48
+                Column {
+                    anchors.centerIn: parent
+                    Text { text: cycle.state; color: cycle.scanningEnabled ? green : amber; font.bold: true; anchors.horizontalCenter: parent.horizontalCenter }
+                    Text { text: cycle.detail; color: textMuted; font.pixelSize: 10; width: 300; elide: Text.ElideRight; horizontalAlignment: Text.AlignHCenter }
+                }
+            }
+        }
+    }
+
+    footer: Rectangle {
+        height: 44
+        color: panel
+        border.color: "#2b3a52"
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 16
+            anchors.rightMargin: 16
+            Text { text: "Flap: " + backend.flapText; color: backend.flapOpen ? amber : green; font.bold: true }
+            Text { text: "Motor: " + backend.motorText + " " + backend.motorRemainingText; color: backend.motorOn ? amber : textMuted }
+            Text { text: "Lock: " + backend.solenoidText; color: backend.solenoidBusy ? amber : textMuted }
+            Item { Layout.fillWidth: true }
+            Text { text: backend.lastEvent; color: textMuted; elide: Text.ElideRight; Layout.maximumWidth: 560 }
+        }
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 14
+        spacing: 12
+
+        TabBar {
+            id: tabs
+            Layout.fillWidth: true
+            TabButton { text: "STATUS" }
+            TabButton { text: "CAMERAS" }
+            TabButton { text: "CONTROLS" }
+            TabButton { text: "LOGS" }
+        }
+
+        StackLayout {
+            currentIndex: tabs.currentIndex
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            // STATUS
+            ScrollView {
+                clip: true
+                ColumnLayout {
+                    width: parent.width
+                    spacing: 14
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 3
+                        columnSpacing: 12
+                        rowSpacing: 12
+
+                        StatusCard { titleText: "SYSTEM CYCLE"; valueText: cycle.state; detailText: cycle.detail; accent: cycle.scanningEnabled ? green : amber }
+                        StatusCard { titleText: "FLAP REED"; valueText: backend.flapText; detailText: "Pin 29 · CLOSED=LOW · OPEN=HIGH"; accent: backend.flapOpen ? amber : green }
+                        StatusCard { titleText: "CRUSHER MOTOR"; valueText: backend.motorText; detailText: backend.motorRemainingText; accent: backend.motorOn ? amber : textMuted }
+                        StatusCard { titleText: "IMX708"; valueText: barcode.status; detailText: barcode.detail; accent: barcode.running ? green : amber }
+                        StatusCard { titleText: "IMX219"; valueText: secondary.status; detailText: secondary.detail; accent: secondary.running ? green : amber }
+                        StatusCard { titleText: "LAST ACCEPTED"; valueText: barcode.productName; detailText: barcode.barcodeNumber + (barcode.sourceCamera.length ? " · " + barcode.sourceCamera : ""); accent: blue }
+                        StatusCard { titleText: "BOX SENSOR"; valueText: backend.boxPresentText; detailText: backend.boxDistanceText; accent: backend.boxSensorHealthy ? green : amber }
+                        StatusCard { titleText: "FILL LEVEL"; valueText: backend.fillPercentText; detailText: backend.fillDistanceText; accent: backend.fillSensorHealthy ? green : amber }
+                        StatusCard { titleText: "TRANSACTION"; valueText: cycle.lastTransactionId.length ? cycle.lastTransactionId.slice(0, 12) : "NONE"; detailText: cycle.lastCamera; accent: blue }
+                    }
+
+                    Rectangle {
+                        visible: barcode.assignmentVisible
+                        Layout.fillWidth: true
+                        implicitHeight: 150
+                        radius: 14
+                        color: "#3b2515"
+                        border.color: amber
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            Text { text: "UNKNOWN BARCODE"; color: amber; font.bold: true; font.pixelSize: 18 }
+                            Text { text: barcode.assignmentTitle + " · " + barcode.assignmentBreadcrumb; color: textMain }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                TextField { id: productNameInput; Layout.fillWidth: true; placeholderText: "Enter full product name" }
+                                Button { text: "SAVE"; enabled: productNameInput.text.trim().length > 0; onClicked: barcode.saveManualAssignment(productNameInput.text) }
+                                Button { text: "CANCEL / RESUME"; onClicked: barcode.cancelAssignment() }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // CAMERAS
+            ColumnLayout {
+                spacing: 12
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button { text: "START SYSTEM"; enabled: cycle.state === "STOPPED" || cycle.state === "CYCLE ERROR"; onClicked: cycle.startSystem() }
+                    Button { text: "STOP SCANNING"; onClicked: cycle.stopSystem() }
+                    Button { text: "RELOCK + REARM"; enabled: cycle.canForceRearm; onClicked: cycle.forceRelockAndRearm() }
+                    Item { Layout.fillWidth: true }
+                    Text { text: "First valid barcode wins; both scanners stop immediately"; color: textMuted }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    CameraCard {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        titleText: "CAM1 · IMX708 WIDE"
+                        statusText: barcode.status
+                        detailText: barcode.detail
+                        imageSource: barcode.previewSource
+                        runningValue: barcode.running
+                    }
+                    CameraCard {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        titleText: "CAM0 · IMX219"
+                        statusText: secondary.status
+                        detailText: secondary.detail
+                        imageSource: secondary.previewSource
+                        runningValue: secondary.running
+                    }
+                }
+            }
+
+            // CONTROLS
+            ScrollView {
+                clip: true
+                ColumnLayout {
+                    width: parent.width
+                    spacing: 14
+                    Text { text: "Manual machine controls"; color: textMain; font.pixelSize: 24; font.bold: true }
+                    Text { text: "Manual operation can override the automatic bottle cycle. Use ALL OUTPUTS OFF in an unsafe state."; color: amber; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    GridLayout {
+                        columns: 2
+                        Layout.fillWidth: true
+                        columnSpacing: 14
+                        rowSpacing: 14
+                        ControlPanel {
+                            titleText: "Crusher motor"
+                            Button { text: "MOTOR ON"; onClicked: backend.manualMotorOn() }
+                            Button { text: "MOTOR OFF"; onClicked: backend.manualMotorOff() }
+                            CheckBox { text: "Reed-triggered automation enabled"; checked: backend.motorAutoEnabled; onClicked: backend.setMotorAutoEnabled(checked) }
+                            Text { text: backend.motorTriggerArmed ? "Next valid flap-open trigger ARMED" : "Motor trigger not armed"; color: backend.motorTriggerArmed ? amber : textMuted }
+                        }
+                        ControlPanel {
+                            titleText: "Flap lock"
+                            Button { text: "LOCK PULSE"; enabled: !backend.solenoidBusy; onClicked: backend.solenoidLock() }
+                            Button { text: "UNLOCK PULSE"; enabled: !backend.solenoidBusy; onClicked: backend.solenoidUnlock() }
+                            CheckBox { text: "Solenoid enabled"; checked: backend.solenoidEnabled; onClicked: backend.setSolenoidEnabled(checked) }
+                            Text { text: "Flap reed: " + backend.flapText; color: backend.flapOpen ? amber : green }
+                        }
+                    }
+                    Button {
+                        text: "ALL OUTPUTS OFF"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 60
+                        onClicked: { cycle.stopSystem(); backend.allOutputsOff() }
+                    }
+                    Button { visible: backend.simulationMode; text: "SIMULATE FLAP OPEN/CLOSE"; onClicked: backend.simulateFlapOpen() }
+                }
+            }
+
+            // LOGS
+            ColumnLayout {
+                spacing: 10
+                Text { text: "Machine events"; color: textMain; font.pixelSize: 23; font.bold: true }
+                TextArea {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    readOnly: true
+                    text: backend.eventLog
+                    color: textMain
+                    font.family: "monospace"
+                    font.pixelSize: 13
+                    wrapMode: TextEdit.Wrap
+                    background: Rectangle { color: panel; radius: 12; border.color: "#2b3a52" }
+                }
+                Text { text: "Barcode history"; color: textMain; font.pixelSize: 18; font.bold: true }
+                TextArea {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 180
+                    readOnly: true
+                    text: barcode.historyText
+                    color: textMain
+                    font.family: "monospace"
+                    font.pixelSize: 12
+                    background: Rectangle { color: panel; radius: 12; border.color: "#2b3a52" }
+                }
+            }
+        }
+    }
+
+    component StatusCard: Rectangle {
+        property string titleText: ""
+        property string valueText: ""
+        property string detailText: ""
+        property color accent: textMuted
+        Layout.fillWidth: true
+        Layout.preferredHeight: 126
+        radius: 14
+        color: panel
+        border.color: "#2b3a52"
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 14
+            Text { text: titleText; color: textMuted; font.pixelSize: 12; font.bold: true }
+            Text { text: valueText; color: accent; font.pixelSize: 21; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
+            Text { text: detailText; color: textMuted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+        }
+    }
+
+    component CameraCard: Rectangle {
+        property string titleText: ""
+        property string statusText: ""
+        property string detailText: ""
+        property string imageSource: ""
+        property bool runningValue: false
+        radius: 14
+        color: panel
+        border.color: runningValue ? green : "#2b3a52"
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 12
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: titleText; color: textMain; font.pixelSize: 18; font.bold: true }
+                Item { Layout.fillWidth: true }
+                Text { text: statusText; color: runningValue ? green : amber; font.bold: true }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                color: "#05080d"
+                radius: 10
+                clip: true
+                Image {
+                    anchors.fill: parent
+                    source: imageSource
+                    cache: false
+                    asynchronous: false
+                    fillMode: Image.PreserveAspectFit
+                }
+                Text {
+                    anchors.centerIn: parent
+                    visible: !runningValue
+                    text: "CAMERA STOPPED"
+                    color: textMuted
+                    font.pixelSize: 18
+                    font.bold: true
+                }
+            }
+            Text { text: detailText; color: textMuted; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+        }
+    }
+
+    component ControlPanel: Rectangle {
+        property string titleText: ""
+        default property alias controls: body.data
+        Layout.fillWidth: true
+        Layout.preferredHeight: 260
+        radius: 14
+        color: panel
+        border.color: "#2b3a52"
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 14
+            spacing: 10
+            Text { text: titleText; color: textMain; font.pixelSize: 20; font.bold: true }
+            ColumnLayout { id: body; Layout.fillWidth: true; spacing: 8 }
+        }
+    }
+}

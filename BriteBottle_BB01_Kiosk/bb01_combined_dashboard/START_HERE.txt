@@ -1,0 +1,20 @@
+BB01 v34: dual IMX708 direct CSI setup with DotStar LED strip control.
+
+Camera setup:
+1. Power off Jetson.
+2. Connect IMX708 to CAM0 and IMX708 to CAM1. No UC-475. No IMX219.
+3. Run: sudo ./install_dual_imx708_dtb.sh
+4. Reboot.
+5. Run: ./verify_dual_imx708_dtb.sh and ./check_dual_imx708_direct.sh
+6. Run: ./run_dashboard.sh --no-camera-autostart
+
+LED setup:
+- Jetson pin 19 MOSI -> DotStar DI / DATA IN
+- Jetson pin 23 SCLK -> DotStar CI / CLOCK IN
+- Jetson GND -> LED PSU negative / LED GND
+- External 5 V PSU positive -> LED strip 5V
+- External 5 V PSU negative -> LED strip GND
+- Recommended: use a 74AHCT125/74AHCT245 level shifter for DATA and CLOCK.
+
+Dashboard:
+Controls tab -> DotStar LED strip lets you set total LEDs, LEDs to light, brightness, colour, and LED OFF.
